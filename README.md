@@ -24,6 +24,8 @@ python -m venv .venv
 
 # Activate it
 .\.venv\Scripts\Activate.ps1
+# MAC
+source .venv/bin/activate
 
 # Install dependencies
 python -m pip install --upgrade pip
