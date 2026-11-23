@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-import app.shared.models  # noqa: E402,F401
+import app.models  # noqa: E402,F401
 from app.core.base import Base  # noqa: E402
 from app.core.database import get_db  # noqa: E402
 from app.main import app as fastapi_app  # noqa: E402

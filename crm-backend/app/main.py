@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-import app.shared.models  # noqa: F401  (registers all tables)
+import app.models  # noqa: F401  (registers all tables)
 from app.api import api_router
 from app.core.config import get_settings
 from app.core.database import engine
