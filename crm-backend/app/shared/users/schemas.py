@@ -6,10 +6,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.shared.rbac.schemas import RoleBrief
 
-UserType = Literal["admin", "manager", "staff"]
 
-
-class DepartmentOut(BaseModel):
+class OrganizationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     name: str
@@ -17,7 +15,29 @@ class DepartmentOut(BaseModel):
     is_active: bool
 
 
+class OrganizationCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=150)
+    code: str = Field(min_length=2, max_length=40, pattern=r"^[a-z0-9_]+$")
+
+
+class OrganizationUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=150)
+    is_active: bool | None = None
+
+UserType = Literal["admin", "org_admin", "manager", "staff"]
+
+
+class DepartmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    organization_id: uuid.UUID | None = None
+    name: str
+    code: str
+    is_active: bool
+
+
 class DepartmentCreate(BaseModel):
+    organization_id: uuid.UUID | None = None
     name: str = Field(min_length=2, max_length=100)
     code: str = Field(min_length=2, max_length=30, pattern=r"^[a-z0-9_]+$")
 
@@ -30,6 +50,8 @@ class DepartmentUpdate(BaseModel):
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
+    organization_id: uuid.UUID | None = None
+    organization: OrganizationOut | None = None
     email: str
     full_name: str
     user_type: str
@@ -46,6 +68,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=2, max_length=150)
     password: str = Field(max_length=128)
     user_type: UserType = "staff"
+    organization_id: uuid.UUID | None = None
     department_id: uuid.UUID | None = None
     manager_id: uuid.UUID | None = None
     role_ids: list[uuid.UUID] = []

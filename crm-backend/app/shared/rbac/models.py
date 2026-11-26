@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Column, ForeignKey, String, Table, Text, Uuid
+from sqlalchemy import Boolean, Column, ForeignKey, String, Table, Text, Uuid, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base import Base, TimestampMixin, uuid_pk
@@ -31,9 +31,13 @@ class Permission(Base):
 
 class Role(Base, TimestampMixin):
     __tablename__ = "roles"
+    __table_args__ = (UniqueConstraint("organization_id", "name"),)
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    name: Mapped[str] = mapped_column(String(100), unique=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
     description: Mapped[str] = mapped_column(Text, default="")
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
 

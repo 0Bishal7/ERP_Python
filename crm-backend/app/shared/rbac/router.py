@@ -28,6 +28,11 @@ async def _get_role(db: AsyncSession, role_id: uuid.UUID) -> Role:
     return role
 
 
+def _org_roles(stmt, p: Principal):
+    # Platform admins can inspect all tenants; organization members see their tenant only.
+    return stmt if p.is_admin else stmt.where(Role.organization_id == p.user.organization_id)
+
+
 async def _load_permissions(
     db: AsyncSession, actor: Principal, codes: list[str]
 ) -> list[Permission]:
@@ -54,7 +59,7 @@ async def list_permissions(
 async def list_roles(
     p: Principal = Depends(require("core.role.view")), db: AsyncSession = Depends(get_db)
 ):
-    return (await db.scalars(select(Role).order_by(Role.name))).all()
+    return (await db.scalars(_org_roles(select(Role), p).order_by(Role.name))).all()
 
 
 @router.get("/roles/{role_id}", response_model=RoleOut)
@@ -63,7 +68,10 @@ async def get_role(
     p: Principal = Depends(require("core.role.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_role(db, role_id)
+    role = await _get_role(db, role_id)
+    if not p.is_admin and role.organization_id != p.user.organization_id:
+        raise api_error(404, "role_not_found", "Role not found")
+    return role
 
 
 @router.post("/roles", response_model=RoleOut, status_code=201)
@@ -73,10 +81,11 @@ async def create_role(
     p: Principal = Depends(require("core.role.manage")),
     db: AsyncSession = Depends(get_db),
 ):
-    if await db.scalar(select(Role.id).where(Role.name == body.name.strip())):
+    org_id = body.organization_id if p.is_admin else p.user.organization_id
+    if await db.scalar(select(Role.id).where(Role.name == body.name.strip(), Role.organization_id == org_id)):
         raise api_error(409, "role_exists", "A role with this name already exists")
     perms = await _load_permissions(db, p, body.permission_codes)
-    role = Role(name=body.name.strip(), description=body.description, permissions=perms)
+    role = Role(organization_id=org_id, name=body.name.strip(), description=body.description, permissions=perms)
     db.add(role)
     await db.flush()
     audit.record(db, action="role.create", user_id=p.user.id, entity="role", entity_id=role.id,
@@ -95,6 +104,8 @@ async def update_role(
     db: AsyncSession = Depends(get_db),
 ):
     role = await _get_role(db, role_id)
+    if not p.is_admin and role.organization_id != p.user.organization_id:
+        raise api_error(404, "role_not_found", "Role not found")
     if body.name is not None and body.name.strip() != role.name:
         if role.is_system:
             raise api_error(409, "system_role", "System roles cannot be renamed")
@@ -118,6 +129,8 @@ async def set_role_permissions(
     db: AsyncSession = Depends(get_db),
 ):
     role = await _get_role(db, role_id)
+    if not p.is_admin and role.organization_id != p.user.organization_id:
+        raise api_error(404, "role_not_found", "Role not found")
     # a non-admin must not be able to strip or change permissions they do not hold
     current = {perm.code for perm in role.permissions}
     if not p.is_admin and (current - p.permissions):
@@ -138,6 +151,8 @@ async def delete_role(
     db: AsyncSession = Depends(get_db),
 ):
     role = await _get_role(db, role_id)
+    if not p.is_admin and role.organization_id != p.user.organization_id:
+        raise api_error(404, "role_not_found", "Role not found")
     if role.is_system:
         raise api_error(409, "system_role", "System roles cannot be deleted")
     in_use = await db.scalar(select(user_roles.c.user_id).where(user_roles.c.role_id == role.id).limit(1))
