@@ -9,13 +9,41 @@ from app.core.base import Base, TimestampMixin, uuid_pk
 USER_TYPES = ("admin", "org_admin", "manager", "staff")
 
 
+# class Organization(Base, TimestampMixin):
+#     __tablename__ = "organizations"
+
+#     id: Mapped[uuid.UUID] = uuid_pk()
+#     name: Mapped[str] = mapped_column(String(150), unique=True)
+#     code: Mapped[str] = mapped_column(String(40), unique=True)
+#     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 class Organization(Base, TimestampMixin):
     __tablename__ = "organizations"
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    name: Mapped[str] = mapped_column(String(150), unique=True)
-    code: Mapped[str] = mapped_column(String(40), unique=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    name: Mapped[str] = mapped_column(String(150), unique=True, nullable=False)
+
+    code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    gst_number: Mapped[str | None] = mapped_column(
+        String(15),
+        unique=True,
+        nullable=True
+    )
+
+    email: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=True
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
 
 
 class Department(Base, TimestampMixin):

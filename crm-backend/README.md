@@ -15,3 +15,8 @@ The interactive API reference is available at `http://127.0.0.1:8000/docs` in lo
 ## Architecture
 
 See [the backend architecture](docs/ARCHITECTURE.md) for module boundaries, dependency rules, database ownership, API composition, security, and the process for adding CRM, HRMS, Accounts, or Inventory capabilities.
+
+## Miagration
+
+alembic revision --autogenerate -m "initial schema"
+alembic upgrade head

@@ -7,25 +7,66 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.shared.rbac.schemas import RoleBrief
 
 
+# class OrganizationOut(BaseModel):
+#     model_config = ConfigDict(from_attributes=True)
+#     id: uuid.UUID
+#     name: str
+#     code: str
+#     is_active: bool
+
+
+# class OrganizationCreate(BaseModel):
+#     name: str = Field(min_length=2, max_length=150)
+#     code: str = Field(min_length=2, max_length=40, pattern=r"^[a-z0-9_]+$")
+
+
+# class OrganizationUpdate(BaseModel):
+#     name: str | None = Field(default=None, min_length=2, max_length=150)
+#     is_active: bool | None = None
+
+# UserType = Literal["admin", "org_admin", "manager", "staff"]
+
 class OrganizationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     name: str
     code: str
+    address: str | None = None
+    gst_number: str | None = None
+    email: EmailStr | None = None
     is_active: bool
 
 
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
-    code: str = Field(min_length=2, max_length=40, pattern=r"^[a-z0-9_]+$")
+    code: str = Field(
+        min_length=2,
+        max_length=40,
+        pattern=r"^[a-z0-9_]+$"
+    )
+    address: str | None = Field(default=None, max_length=500)
+    gst_number: str | None = Field(
+        default=None,
+        min_length=15,
+        max_length=15
+    )
+    email: EmailStr | None = None
 
 
 class OrganizationUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
+    address: str | None = Field(default=None, max_length=500)
+    gst_number: str | None = Field(
+        default=None,
+        min_length=15,
+        max_length=15
+    )
+    email: EmailStr | None = None
     is_active: bool | None = None
 
-UserType = Literal["admin", "org_admin", "manager", "staff"]
 
+UserType = Literal["admin", "org_admin", "manager", "staff"]
 
 class DepartmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

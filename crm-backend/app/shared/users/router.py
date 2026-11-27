@@ -35,36 +35,195 @@ async def list_organizations(p: Principal = Depends(require_admin), db: AsyncSes
     return (await db.scalars(select(Organization).order_by(Organization.name))).all()
 
 
+# @organizations_router.post("", response_model=OrganizationOut, status_code=201)
+# async def create_organization(body: OrganizationCreate, request: Request,
+#                               p: Principal = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+#     exists = await db.scalar(select(Organization.id).where(
+#         (Organization.code == body.code) | (Organization.name == body.name.strip())))
+#     if exists:
+#         raise api_error(409, "organization_exists", "An organization with this name or code exists")
+#     org = Organization(name=body.name.strip(), code=body.code)
+#     db.add(org)
+#     await db.flush()
+#     audit.record(db, action="organization.create", user_id=p.user.id, entity="organization",
+#                  entity_id=org.id, details={"code": org.code}, ip=client_ip(request))
+#     await db.commit()
+#     return org
+
+
+# @organizations_router.patch("/{organization_id}", response_model=OrganizationOut)
+# async def update_organization(organization_id: uuid.UUID, body: OrganizationUpdate, request: Request,
+#                               p: Principal = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+#     org = await db.get(Organization, organization_id)
+#     if org is None:
+#         raise api_error(404, "organization_not_found", "Organization not found")
+#     changes = body.model_dump(exclude_unset=True)
+#     for key, value in changes.items():
+#         if value is not None:
+#             setattr(org, key, value.strip() if isinstance(value, str) else value)
+#     audit.record(db, action="organization.update", user_id=p.user.id, entity="organization",
+#                  entity_id=org.id, details=changes, ip=client_ip(request))
+#     await db.commit()
+#     return org
+
+
 @organizations_router.post("", response_model=OrganizationOut, status_code=201)
-async def create_organization(body: OrganizationCreate, request: Request,
-                              p: Principal = Depends(require_admin), db: AsyncSession = Depends(get_db)):
-    exists = await db.scalar(select(Organization.id).where(
-        (Organization.code == body.code) | (Organization.name == body.name.strip())))
+async def create_organization(
+    body: OrganizationCreate,
+    request: Request,
+    p: Principal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    # Normalize input
+    name = body.name.strip()
+    code = body.code.strip()
+    address = body.address.strip() if body.address else None
+    gst_number = body.gst_number.strip().upper() if body.gst_number else None
+    email = str(body.email).strip().lower() if body.email else None
+
+    # Check duplicate organization name or code
+    conditions = [
+        Organization.name == name,
+        Organization.code == code
+    ]
+
+    if gst_number:
+        conditions.append(Organization.gst_number == gst_number)
+
+    if email:
+        conditions.append(Organization.email == email)
+
+    exists = await db.scalar(
+        select(Organization.id).where(
+            or_(*conditions)
+        )
+    )
+
     if exists:
-        raise api_error(409, "organization_exists", "An organization with this name or code exists")
-    org = Organization(name=body.name.strip(), code=body.code)
+        raise api_error(
+            409,
+            "organization_exists",
+            "An organization with this name, code, GST number, or email already exists"
+        )
+
+    # Create organization
+    org = Organization(
+        name=name,
+        code=code,
+        address=address,
+        gst_number=gst_number,
+        email=email
+    )
+
     db.add(org)
     await db.flush()
-    audit.record(db, action="organization.create", user_id=p.user.id, entity="organization",
-                 entity_id=org.id, details={"code": org.code}, ip=client_ip(request))
+
+    # Audit log
+    audit.record(
+        db,
+        action="organization.create",
+        user_id=p.user.id,
+        entity="organization",
+        entity_id=org.id,
+        details={
+            "code": org.code,
+            "name": org.name,
+            "gst_number": org.gst_number,
+            "email": org.email
+        },
+        ip=client_ip(request)
+    )
+
     await db.commit()
+    await db.refresh(org)
+
     return org
 
 
 @organizations_router.patch("/{organization_id}", response_model=OrganizationOut)
-async def update_organization(organization_id: uuid.UUID, body: OrganizationUpdate, request: Request,
-                              p: Principal = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+async def update_organization(
+    organization_id: uuid.UUID,
+    body: OrganizationUpdate,
+    request: Request,
+    p: Principal = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
     org = await db.get(Organization, organization_id)
+
     if org is None:
-        raise api_error(404, "organization_not_found", "Organization not found")
+        raise api_error(
+            404,
+            "organization_not_found",
+            "Organization not found"
+        )
+
+    # Get only supplied fields
     changes = body.model_dump(exclude_unset=True)
+
+    # Normalize values
     for key, value in changes.items():
-        if value is not None:
-            setattr(org, key, value.strip() if isinstance(value, str) else value)
-    audit.record(db, action="organization.update", user_id=p.user.id, entity="organization",
-                 entity_id=org.id, details=changes, ip=client_ip(request))
+        if isinstance(value, str):
+            value = value.strip()
+
+            if key == "gst_number":
+                value = value.upper()
+
+            elif key == "email":
+                value = value.lower()
+
+        changes[key] = value
+
+    # Check duplicate values against other organizations
+    conditions = []
+
+    for key in ("name", "gst_number", "email"):
+        value = changes.get(key)
+
+        if value:
+            conditions.append(
+                getattr(Organization, key) == value
+            )
+
+    if "code" in changes and changes["code"]:
+        conditions.append(
+            Organization.code == changes["code"]
+        )
+
+    if conditions:
+        exists = await db.scalar(
+            select(Organization.id).where(
+                Organization.id != organization_id,
+                or_(*conditions)
+            )
+        )
+
+        if exists:
+            raise api_error(
+                409,
+                "organization_exists",
+                "Another organization with this name, code, GST number, or email already exists"
+            )
+
+    # Apply updates
+    for key, value in changes.items():
+        setattr(org, key, value)
+
+    # Audit log
+    audit.record(
+        db,
+        action="organization.update",
+        user_id=p.user.id,
+        entity="organization",
+        entity_id=org.id,
+        details=changes,
+        ip=client_ip(request)
+    )
+
     await db.commit()
+    await db.refresh(org)
+
     return org
+
 
 
 # ---- users -------------------------------------------------------------------------------------

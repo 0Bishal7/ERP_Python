@@ -14,4 +14,11 @@ api_router.include_router(departments_router)
 api_router.include_router(organizations_router)
 api_router.include_router(rbac_router)
 api_router.include_router(audit_router)
-api_router.include_router(crm_router)  # later: hrms, accounts, inventory
+api_router.include_router(crm_router)            # later: hrms, accounts, inventory
+
+
+
+
+
+
+
