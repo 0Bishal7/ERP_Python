@@ -11,7 +11,7 @@ from app.shared.audit import service as audit
 from app.shared.auth.principal import Principal
 from app.shared.auth.service import revoke_all_sessions
 from app.shared.rbac.models import Role
-from app.shared.users.models import Department, User
+from app.shared.users.models import Department, Organization, User
 from app.shared.users.schemas import UserCreate, UserUpdate
 
 settings = get_settings()
@@ -37,9 +37,12 @@ async def list_users(
     q: str | None,
     is_active: bool | None,
     department_id: uuid.UUID | None,
+    organization_id: uuid.UUID | None,
 ) -> tuple[list[User], int]:
     stmt, count = select(User), select(func.count()).select_from(User)
     filters = []
+    if organization_id is not None:
+        filters.append(User.organization_id == organization_id)
     if q:
         like = f"%{q.strip().lower()}%"
         filters.append(or_(func.lower(User.email).like(like), func.lower(User.full_name).like(like)))
@@ -127,15 +130,29 @@ async def create_user(db: AsyncSession, actor: Principal, data: UserCreate, ip: 
     if problems:
         raise api_error(422, "weak_password", "Password is too weak", problems)
 
+    org_id = actor.user.organization_id
+    if actor.is_admin:
+        org_id = data.organization_id
+    elif data.organization_id and data.organization_id != org_id:
+        raise api_error(403, "organization_forbidden", "You cannot create users for another organization")
+    if org_id and await db.get(Organization, org_id) is None:
+        raise api_error(400, "organization_not_found", "Organization does not exist")
     await _check_department(db, data.department_id)
+    if data.department_id:
+        dept = await db.get(Department, data.department_id)
+        if dept and dept.organization_id != org_id:
+            raise api_error(400, "department_not_found", "Department does not exist in this organization")
     await _check_manager(db, data.manager_id, None)
     roles = await _load_roles(db, data.role_ids)
+    if any(role.organization_id != org_id for role in roles):
+        raise api_error(400, "role_not_found", "One or more roles do not exist in this organization")
     _assert_can_grant_roles(actor, roles)
 
     user = User(
         email=email,
         full_name=data.full_name.strip(),
         password_hash=await ahash_password(data.password),
+        organization_id=org_id,
         user_type=data.user_type,
         department_id=data.department_id,
         manager_id=data.manager_id,
@@ -158,12 +175,14 @@ async def update_user(
     db: AsyncSession, actor: Principal, user_id: uuid.UUID, data: UserUpdate, ip: str | None
 ) -> User:
     user = await get_user_or_404(db, user_id)
+    if not actor.is_admin and user.organization_id != actor.user.organization_id:
+        raise api_error(404, "user_not_found", "User not found")
     fields = data.model_fields_set
     changed: dict = {}
 
     if user.is_admin and not actor.is_admin:
         raise api_error(403, "forbidden", "Only an admin can modify an admin")
-    if data.user_type == "admin" and not actor.is_admin:
+    if data.user_type in {"admin", "org_admin"} and not actor.is_admin:
         raise api_error(403, "forbidden", "Only an admin can make someone an admin")
 
     # never leave the system without an active admin, never lock yourself out
@@ -185,10 +204,18 @@ async def update_user(
         changed["user_type"] = data.user_type
     if "department_id" in fields:
         await _check_department(db, data.department_id)
+        if data.department_id:
+            department = await db.get(Department, data.department_id)
+            if department and department.organization_id != user.organization_id:
+                raise api_error(400, "department_not_found", "Department does not exist in this organization")
         user.department_id = data.department_id
         changed["department_id"] = str(data.department_id) if data.department_id else None
     if "manager_id" in fields:
         await _check_manager(db, data.manager_id, user.id)
+        if data.manager_id:
+            manager = await db.get(User, data.manager_id)
+            if manager and manager.organization_id != user.organization_id:
+                raise api_error(400, "manager_not_found", "Manager does not exist in this organization")
         user.manager_id = data.manager_id
         changed["manager_id"] = str(data.manager_id) if data.manager_id else None
     if "is_active" in fields and data.is_active is not None:
@@ -200,6 +227,8 @@ async def update_user(
         if not actor.can("core.user.manage_roles"):
             raise api_error(403, "forbidden", "You cannot assign roles", ["core.user.manage_roles"])
         roles = await _load_roles(db, data.role_ids)
+        if any(role.organization_id != user.organization_id for role in roles):
+            raise api_error(400, "role_not_found", "One or more roles do not exist in this organization")
         _assert_can_grant_roles(actor, roles)
         user.roles = roles
         changed["roles"] = [r.name for r in roles]
@@ -221,6 +250,8 @@ async def reset_password(
     ip: str | None,
 ) -> None:
     user = await get_user_or_404(db, user_id)
+    if not actor.is_admin and user.organization_id != actor.user.organization_id:
+        raise api_error(404, "user_not_found", "User not found")
     if user.is_admin and not actor.is_admin:
         raise api_error(403, "forbidden", "Only an admin can reset an admin's password")
     problems = password_problems(new_password, settings.min_password_length, user.email)

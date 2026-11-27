@@ -33,6 +33,8 @@ async def get_principal(request: Request, db: AsyncSession = Depends(get_db)) ->
     user = await db.get(User, session.user_id)
     if user is None or not user.is_active:
         raise api_error(401, "not_authenticated", "Please log in")
+    if user.organization_id and user.organization and not user.organization.is_active:
+        raise api_error(403, "organization_disabled", "This organization is disabled")
 
     # CSRF: unsafe methods must echo the token we gave the client at login / on /auth/me
     if request.method not in SAFE_METHODS:

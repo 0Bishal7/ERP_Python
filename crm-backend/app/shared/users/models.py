@@ -1,21 +1,35 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Uuid, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base import Base, TimestampMixin, uuid_pk
 
-USER_TYPES = ("admin", "manager", "staff")
+USER_TYPES = ("admin", "org_admin", "manager", "staff")
+
+
+class Organization(Base, TimestampMixin):
+    __tablename__ = "organizations"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String(150), unique=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Department(Base, TimestampMixin):
     __tablename__ = "departments"
+    __table_args__ = (UniqueConstraint("organization_id", "name"), UniqueConstraint("organization_id", "code"))
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    name: Mapped[str] = mapped_column(String(100), unique=True)
-    code: Mapped[str] = mapped_column(String(30), unique=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    code: Mapped[str] = mapped_column(String(30))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    organization: Mapped[Organization | None] = relationship(lazy="joined")
 
 
 class User(Base, TimestampMixin):
@@ -25,6 +39,9 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(150))
     password_hash: Mapped[str] = mapped_column(String(255))
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # admin = sees everything, manager = own team, staff = own records
     user_type: Mapped[str] = mapped_column(String(20), default="staff")
@@ -46,6 +63,7 @@ class User(Base, TimestampMixin):
 
     # Eager loading: async SQLAlchemy cannot lazy load, so we load these with the user.
     department: Mapped[Department | None] = relationship(lazy="joined")
+    organization: Mapped[Organization | None] = relationship(lazy="joined")
     roles: Mapped[list["Role"]] = relationship(  # noqa: F821
         secondary="user_roles", back_populates="users", lazy="selectin"
     )

@@ -9,6 +9,7 @@ PERMISSIONS: dict[str, str] = {
     "core.user.create": "Create users",
     "core.user.update": "Edit users, activate or deactivate",
     "core.user.manage_roles": "Assign roles to users",
+    "core.organization.manage": "Create and manage organizations",
     "core.user.reset_password": "Reset a user's password",
     "core.role.view": "View roles and permissions",
     "core.role.manage": "Create, edit and delete roles",
